@@ -1,33 +1,110 @@
-# Mailqueue — Email Campaigner
+# Mailqueue — Bulk Email Campaign & Queue Platform
 
-A full-stack bulk email campaign application built with **Node.js, TypeScript, Express, MySQL (`mysql2`), Nodemailer, `node-cron`, and Next.js (App Router)**.
+[![Live App](https://img.shields.io/badge/Live_Demo-Vercel-000000?style=flat&logo=vercel)](https://mailqueue-campaigner.vercel.app)
+[![API Docs](https://img.shields.io/badge/Swagger_Docs-OpenAPI_3.0-85EA2D?style=flat&logo=swagger&logoColor=black)](https://api-production-2c66ea97.up.railway.app/api-docs)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?style=flat&logo=mysql&logoColor=white)](https://www.mysql.com/)
 
-A user uploads leads via CSV, writes reusable email templates with `{{name}}` and `{{company}}` placeholders, and launches a campaign. Instead of sending emails inside the HTTP request (which would time out on large lists), the API queues one `pending` row per lead in MySQL. A separate background worker wakes up every minute, sends 10 emails at a time via Nodemailer, retries failures up to 3 times, and updates delivery status in real time for the dashboard.
+A full-stack bulk email campaign manager built with **Node.js, TypeScript, Express, MySQL (`mysql2`), Nodemailer, `node-cron`, and Next.js (App Router)**.
+
+Instead of sending emails synchronously inside HTTP requests, the API writes queued delivery jobs to MySQL inside an atomic transaction while a decoupled background worker processes batches of 10 emails per minute with automatic 3x retry handling and live status monitoring.
+
+### Live Deployment
+- **Web App:** https://mailqueue-campaigner.vercel.app
+- **REST API:** https://api-production-2c66ea97.up.railway.app
+- **Interactive OpenAPI / Swagger Docs:** https://api-production-2c66ea97.up.railway.app/api-docs
+- **API Health Check:** https://api-production-2c66ea97.up.railway.app/health
 
 ---
 
-## Architecture Overview
+## System Architecture
 
-```
-[ Next.js Frontend (:3000) ]
-           │  HTTP / JSON + CSV upload
-           ▼
-[ Express REST API (:4000) ] ──────► [ MySQL Database ]
-                                       - leads
-                                       - templates
-                                       - campaigns
-                                       - email_logs (job queue + audit log)
-                                            ▲
-                                            │ polls 10 rows / minute
-                                   [ node-cron Worker ]
-                                            │ renders {{placeholders}}
-                                            ▼
-                                   [ Nodemailer -> Mailtrap SMTP ]
+```text
+┌─────────────────────────────┐
+│   Next.js Frontend (Vercel) │  Leads CSV Upload · Template Live Preview · Dashboard (5s Poll)
+└──────────────┬──────────────┘
+               │ REST / JSON + Multipart CSV
+               ▼
+┌─────────────────────────────┐         ┌──────────────────────────────────────┐
+│  Express API (Railway)      │────────▶│        MySQL 8 (Railway)             │
+│  - Validation & AppError    │         │  - leads (UNIQUE email)              │
+│  - Bulk INSERT IGNORE       │         │  - templates ({{placeholders}})      │
+│  - SQL Transactions         │         │  - campaigns (FK -> templates)       │
+│  - OpenAPI 3.0 (/api-docs)  │         │  - email_logs (indexed job queue)    │
+└─────────────────────────────┘         └──────────────────▲───────────────────┘
+                                                           │ Polls 10 rows / min
+                                        ┌──────────────────┴───────────────────┐
+                                        │   Background Worker (Railway)        │
+                                        │  - node-cron + overlap lock          │
+                                        │  - Pure renderTemplate() engine      │
+                                        │  - Up to 3x retries + error logging  │
+                                        └──────────────────┬───────────────────┘
+                                                           │ SMTP (Nodemailer)
+                                                           ▼
+                                        ┌──────────────────────────────────────┐
+                                        │      Mailtrap / SMTP Provider        │
+                                        └──────────────────────────────────────┘
 ```
 
-### Folder Structure
+---
 
-```
+## Key Features
+
+- **CSV Lead Ingestion with Duplicate Protection:** Upload leads via `POST /leads/upload` (`multer` + `csv-parse`). Validates email syntax and uses bulk `INSERT IGNORE` backed by a MySQL `UNIQUE` constraint on `leads.email`, returning exact `inserted`, `skippedDuplicates`, and `invalidRows` counts.
+- **Template Studio with Live Preview:** Full CRUD for reusable templates supporting `{{name}}`, `{{company}}`, and `{{email}}` placeholders, paired with a split-pane email client preview rendered on every keystroke.
+- **Transactional Campaign Queueing:** `POST /campaigns` creates the campaign record and bulk-inserts one `pending` row per lead into `email_logs` inside a single MySQL transaction (`beginTransaction` → `commit` / `rollback`), preventing partial or orphaned campaigns.
+- **Fault-Tolerant Background Worker:** Runs as an independent process (`node-cron` every minute), fetches up to 10 `pending` or retryable `failed` (`retry_count < 3`) rows, renders templates via a pure function, dispatches via Nodemailer, records SMTP errors, and automatically transitions campaign status (`pending` → `running` → `completed`).
+- **Auto-Refreshing Telemetry Dashboard:** Displays live `sent`, `pending`, and `failed` metrics, proportional delivery bar, and recipient-level logs (with retry count `0/3` and last SMTP error) polling every 5 seconds with pause/resume controls.
+- **Interactive API Documentation & Tests:** Complete OpenAPI 3.0 spec served at `/api-docs`, plus 11 automated Jest + Supertest tests covering template rendering edge cases and campaign API transactions/rollbacks.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| **Frontend** | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4 |
+| **Backend API** | Node.js, TypeScript, Express, Multer, `csv-parse`, Swagger UI |
+| **Database** | MySQL 8 (`mysql2/promise` with plain parameterized SQL — no ORM) |
+| **Worker & Email** | `node-cron`, Nodemailer (Mailtrap SMTP in dev / any SMTP in prod) |
+| **Testing** | Jest, `ts-jest`, Supertest |
+| **Deployment** | Vercel (Frontend), Railway (MySQL + API + Worker), GitHub |
+
+---
+
+## Database Schema
+
+Defined in [`database/schema.sql`](./database/schema.sql) (and auto-verified on startup via [`backend/src/config/initDb.ts`](./backend/src/config/initDb.ts)):
+
+- **`leads`** (`id`, `name`, `email UNIQUE`, `company`, `created_at`)
+- **`templates`** (`id`, `name`, `subject`, `body`, `created_at`)
+- **`campaigns`** (`id`, `name`, `template_id FK -> templates(id) ON DELETE RESTRICT`, `status ENUM('pending','running','completed')`, `created_at`)
+- **`email_logs`** (`id`, `campaign_id FK`, `lead_id FK`, `status ENUM('pending','sent','failed')`, `retry_count`, `error_message`, `sent_at`, `UNIQUE(campaign_id, lead_id)`)
+- **Indexes:** `idx_email_logs_status (status)` for fast worker queue polling and `idx_email_logs_campaign_status (campaign_id, status)` for fast dashboard aggregations.
+
+---
+
+## API Endpoints
+
+| Method | Route | Description |
+| --- | --- | --- |
+| `GET` | `/health` | Verifies API uptime and MySQL connectivity |
+| `GET` | `/api-docs` | Interactive Swagger / OpenAPI 3.0 documentation |
+| `POST` | `/leads/upload` | Multipart CSV upload (`file`); skips duplicate emails |
+| `GET` | `/leads` | Returns all stored leads |
+| `POST` | `/templates` | Creates an email template with `{{placeholder}}` support |
+| `GET` | `/templates` | Lists all templates |
+| `PUT` | `/templates/:id` | Updates a template |
+| `DELETE` | `/templates/:id` | Deletes a template (`409 Conflict` if referenced by a campaign) |
+| `POST` | `/campaigns` | Creates a campaign and queues one `pending` `email_log` per lead |
+| `GET` | `/campaigns` | Lists all campaigns with aggregated delivery stats |
+| `GET` | `/campaigns/:id/stats` | Returns `total`/`sent`/`failed`/`pending` counts and recipient delivery logs |
+
+---
+
+## Project Structure
+
+```text
 email-campigner/
 ├── database/
 │   └── schema.sql                 # MySQL tables, foreign keys, and indexes
@@ -35,162 +112,90 @@ email-campigner/
 │   ├── .env.example
 │   ├── jest.config.js
 │   ├── src/
-│   │   ├── app.ts                 # Express app (CORS, Swagger, routes, error handler)
-│   │   ├── server.ts              # HTTP server entry point
-│   │   ├── config/                # env, mysql2 pool, Nodemailer, OpenAPI spec
-│   │   ├── controllers/           # leads, templates, campaigns business logic
-│   │   ├── routes/                # Express routers
-│   │   ├── middleware/            # AppError + centralized error handler
+│   │   ├── app.ts                 # Express app (CORS, JSON, Swagger, routes, error handler)
+│   │   ├── server.ts              # HTTP entry point with graceful SIGTERM shutdown
+│   │   ├── config/                # env, mysql2 pool, auto-schema init, Nodemailer, Swagger
+│   │   ├── controllers/           # leads, templates, campaigns SQL controllers
+│   │   ├── routes/                # Express route definitions
+│   │   ├── middleware/            # AppError + centralized error handling
 │   │   ├── utils/
-│   │   │   └── renderTemplate.ts  # Pure function for {{placeholder}} substitution
+│   │   │   └── renderTemplate.ts  # Pure {{placeholder}} rendering function
 │   │   └── worker/
-│   │       ├── emailWorker.ts     # Batch fetch, render, send, retry, status update
-│   │       └── index.ts           # Standalone node-cron process
+│   │       ├── emailWorker.ts     # Batch processor (10/min) + 3x retry state machine
+│   │       └── index.ts           # Standalone node-cron process with overlap & SIGTERM guards
 │   └── tests/
-│       ├── renderTemplate.test.ts # Unit tests for template rendering
-│       └── campaigns.test.ts      # API tests for campaign creation & stats
+│       ├── renderTemplate.test.ts # 5 unit tests for placeholder substitution
+│       └── campaigns.test.ts      # 6 API tests (Supertest + mocked MySQL pool)
 ├── frontend/
 │   ├── .env.example
 │   └── src/
-│       ├── lib/                   # Typed API client + client-side preview renderer
-│       ├── components/            # Persistent sidebar navigation + API status check
+│       ├── lib/                   # Typed API client + live template preview helper
+│       ├── components/            # Persistent sidebar navigation + live API health indicator
 │       └── app/                   # Dashboard (/), /leads, /templates, /campaigns
-├── sample-leads.csv               # Sample CSV for testing uploads
+├── sample-leads.csv               # Ready-to-upload test dataset
 └── README.md
 ```
 
 ---
 
-## Tech Stack
-
-- **Backend**: Node.js, TypeScript, Express
-- **Database**: MySQL (`mysql2/promise` with plain parameterized SQL — no heavy ORM)
-- **Email Delivery**: Nodemailer (configured for Mailtrap SMTP in development)
-- **Background Worker**: `node-cron` (runs every minute, processes 10 emails per batch)
-- **Frontend**: Next.js (App Router), TypeScript, Tailwind CSS
-- **API Docs**: Swagger UI / OpenAPI 3.0 at `/api-docs`
-- **Testing**: Jest + Supertest
-
----
-
-## Features
-
-- **Lead Management**: Upload contacts via CSV (`POST /leads/upload`), automatically skip duplicate emails with MySQL `INSERT IGNORE` + `UNIQUE(email)`, search/filter leads.
-- **Template Studio**: Create, edit, and delete email templates (`POST/GET/PUT/DELETE /templates`) with clickable `{{name}}`, `{{company}}`, `{{email}}` tokens and an instant live email preview.
-- **Transactional Campaign Creation**: `POST /campaigns` creates the campaign and bulk-inserts one `pending` `email_log` per lead inside a single MySQL transaction.
-- **Fault-Tolerant Background Worker**: Runs every minute via `node-cron`, picks up to 10 pending or retryable emails, renders placeholders with a pure function, sends via Nodemailer, and retries failed sends up to 3 times before marking them permanently `failed`.
-- **Auto-Refreshing Delivery Dashboard**: Polls `GET /campaigns/:id/stats` every 5 seconds with pause/resume controls, delivery breakdown (`sent` / `pending` / `failed`), segmented progress bar, and per-recipient delivery logs + error messages.
-- **Interactive API Docs**: OpenAPI 3.0 specification served at `http://localhost:4000/api-docs`.
-
----
-
-## Setup Guide
+## Running Locally
 
 ### Prerequisites
+- Node.js 18+
+- MySQL 8.0+
+- Free [Mailtrap](https://mailtrap.io/) Email Testing inbox (for SMTP credentials)
 
-- Node.js 18+ (tested on Node 22/26)
-- MySQL 8.0+ running locally
-- A free [Mailtrap](https://mailtrap.io/) Email Testing inbox for development SMTP credentials
-
-### 1. Create the MySQL Database
-
-Run the provided schema file to create the `email_campaigner` database, all 4 tables, foreign keys, and indexes:
-
+### 1. Create the Database
 ```bash
 mysql -u root -p < database/schema.sql
 ```
 
 ### 2. Configure Environment Variables
-
-**Backend:**
-
 ```bash
 cp backend/.env.example backend/.env
-```
-
-Edit `backend/.env` and fill in your MySQL password and Mailtrap SMTP credentials (`SMTP_USER` and `SMTP_PASS`).
-
-**Frontend:**
-
-```bash
 cp frontend/.env.example frontend/.env.local
 ```
-
-(`NEXT_PUBLIC_API_URL=http://localhost:4000` works out of the box for local development.)
+Fill in your MySQL password and Mailtrap `SMTP_USER` / `SMTP_PASS` inside `backend/.env`.
 
 ### 3. Install Dependencies
-
 ```bash
-# Backend
 cd backend && npm install
-
-# Frontend (in another terminal or back from project root)
-cd frontend && npm install
+cd ../frontend && npm install
 ```
 
-### 4. Run the Application (3 Terminals)
-
-Running the API, worker, and frontend in separate terminals mirrors how they are deployed independently in production:
-
+### 4. Start All 3 Processes
 ```bash
-# Terminal 1: Backend API (http://localhost:4000)
-cd backend
-npm run dev
+# Terminal 1 — Express API (http://localhost:4000)
+cd backend && npm run dev
 
-# Terminal 2: Background Email Worker (runs every minute)
-cd backend
-npm run worker:dev
+# Terminal 2 — Background Email Worker (runs every minute)
+cd backend && npm run worker:dev
 
-# Terminal 3: Next.js Frontend (http://localhost:3000)
-cd frontend
-npm run dev
+# Terminal 3 — Next.js Frontend (http://localhost:3000)
+cd frontend && npm run dev
 ```
 
-- **App UI**: http://localhost:3000
-- **Swagger API Docs**: http://localhost:4000/api-docs
-- **Health Check**: http://localhost:4000/health
-
-### 5. Run Tests
-
+### 5. Run the Test Suite
 ```bash
-cd backend
-npm test
+cd backend && npm test
 ```
 
 ---
 
-## API Reference
+## Engineering Challenges & How I Solved Them
 
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| `GET` | `/health` | Verify API and MySQL connectivity |
-| `GET` | `/api-docs` | Interactive Swagger / OpenAPI UI |
-| `POST` | `/leads/upload` | Upload CSV (`file` field); skips duplicate emails |
-| `GET` | `/leads` | List all leads |
-| `POST` | `/templates` | Create an email template |
-| `GET` | `/templates` | List all templates |
-| `PUT` | `/templates/:id` | Update a template |
-| `DELETE` | `/templates/:id` | Delete a template (returns `409` if used by a campaign) |
-| `POST` | `/campaigns` | Create a campaign and queue one `pending` email per lead |
-| `GET` | `/campaigns` | List all campaigns with delivery stats |
-| `GET` | `/campaigns/:id/stats` | Get `sent`/`failed`/`pending` counts and recipient logs |
+1. **Decoupling bulk email delivery from HTTP request lifecycles**
+   - *Problem:* Sending SMTP emails synchronously inside `POST /campaigns` would cause HTTP timeouts on large lead lists and risk partial sends if the server restarted mid-request.
+   - *Solution:* Modeled `email_logs` as a durable MySQL job queue. `POST /campaigns` commits the campaign and all `pending` rows in a single SQL transaction and returns `201` immediately. A standalone `node-cron` worker drains 10 emails per minute independently.
 
----
+2. **Idempotent CSV uploads without N+1 queries**
+   - *Problem:* Re-uploading overlapping CSV files or CSVs containing internal duplicate addresses should never fail the whole import or issue one `SELECT` query per row.
+   - *Solution:* Enforced a `UNIQUE` index on `leads.email` and performed a single bulk `INSERT IGNORE INTO leads (name, email, company) VALUES ?`. Comparing `result.affectedRows` against valid CSV rows gives exact inserted vs. duplicate-skipped counts in one database round-trip.
 
-## Challenges and How I Solved Them
+3. **Bounded retries and safe shutdown in the background worker**
+   - *Problem:* Transient SMTP failures should retry automatically, permanent failures shouldn't loop forever, slow batches shouldn't overlap across cron ticks, and cloud redeploys (`SIGTERM`) shouldn't kill an email mid-flight.
+   - *Solution:* Query `WHERE status = 'pending' OR (status = 'failed' AND retry_count < 3)` with an index on `status`, stopping retries permanently at `3/3` while preserving `error_message`. Added an in-process `isRunning` lock to prevent overlapping ticks and `SIGTERM`/`SIGINT` handlers to drain active batches before closing the MySQL connection pool.
 
-1. **Preventing HTTP timeouts during bulk email sending**
-   - *Challenge*: Sending emails synchronously inside `POST /campaigns` would block the HTTP request for minutes if there are hundreds of leads, and a single SMTP error could crash the request halfway through.
-   - *Solution*: Decoupled queueing from sending. `POST /campaigns` only inserts `pending` rows into `email_logs` inside a fast SQL transaction and returns `201` immediately. A standalone `node-cron` worker sends 10 emails per minute in the background.
-
-2. **Handling duplicate leads cleanly on CSV re-uploads**
-   - *Challenge*: Users often re-upload updated CSVs that overlap with existing leads, or contain duplicate emails inside the same file. Checking every email one-by-one with `SELECT` queries is slow and prone to race conditions.
-   - *Solution*: Added a `UNIQUE` constraint on `leads.email` in MySQL and used bulk `INSERT IGNORE INTO leads (name, email, company) VALUES ?`. MySQL inserts new rows in one round-trip, skips duplicates automatically, and `result.affectedRows` tells us the exact count of newly inserted vs. skipped rows.
-
-3. **Retry logic without infinite loops or overlapping worker ticks**
-   - *Challenge*: Temporary SMTP blips shouldn't permanently fail an email, but broken addresses shouldn't retry forever. Also, if a batch takes longer than 60 seconds, two cron ticks could pick up the same rows simultaneously.
-   - *Solution*: Tracked `retry_count` on `email_logs`. The worker queries `WHERE status = 'pending' OR (status = 'failed' AND retry_count < 3)`. After 3 failed attempts, the row stays permanently `failed` with its `error_message`. An in-process `isRunning` lock prevents overlapping cron runs (and for multi-worker scaling, the next step would be `SELECT ... FOR UPDATE SKIP LOCKED` or a Redis queue like BullMQ).
-
-4. **Keeping template rendering predictable and easy to test**
-   - *Challenge*: Mixing placeholder substitution directly into Nodemailer calls makes edge cases (`{{ name }}`, missing company fields, case differences) hard to test without mocking SMTP.
-   - *Solution*: Extracted `renderTemplate(template, variables)` into a standalone pure function in `backend/src/utils/renderTemplate.ts`. It has zero external dependencies, is covered by fast Jest unit tests, and is mirrored on the frontend for instant live previews.
+4. **Testability without live infrastructure dependencies**
+   - *Problem:* Coupling placeholder rendering directly to SMTP delivery or coupling the Express app to `app.listen()` makes unit and API tests slow and flaky.
+   - *Solution:* Isolated `renderTemplate()` as a pure function (`backend/src/utils/renderTemplate.ts`) and exported `app` separately from `server.ts`, enabling fast Jest + Supertest suites covering template edge cases and SQL transaction rollbacks.
