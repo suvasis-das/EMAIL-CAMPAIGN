@@ -10,6 +10,7 @@ node_modules/
 backend/dist/
 frontend/.next/
 frontend/out/
+*.tsbuildinfo
 
 # Logs & OS files
 *.log

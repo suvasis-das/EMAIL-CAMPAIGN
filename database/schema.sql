@@ -11,6 +11,15 @@ CREATE DATABASE IF NOT EXISTS email_campaigner
 
 USE email_campaigner;
 
+-- 0. Users: authenticated application operators (Sign Up & Sign In).
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 1. Leads: people who will receive campaign emails.
 -- The UNIQUE constraint on email prevents duplicate contacts at the DB level.
 CREATE TABLE IF NOT EXISTS leads (

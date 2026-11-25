@@ -7,10 +7,13 @@ import {
   Activity,
   ExternalLink,
   FileCode2,
+  LogIn,
+  LogOut,
   Send,
   Users,
 } from 'lucide-react';
 import { api, API_URL } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: Activity },
@@ -21,6 +24,7 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user, logout, isLoading } = useAuth();
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>(
     'checking'
   );
@@ -98,8 +102,46 @@ export function Sidebar() {
         </nav>
       </div>
 
-      {/* Footer: live backend health + Swagger link */}
-      <div className="hidden md:block p-3 border-t border-white/[0.06] space-y-2.5">
+      {/* Footer: User profile / Sign in + live backend health + Swagger link */}
+      <div className="p-3 border-t border-white/[0.06] space-y-2.5">
+        {!isLoading && (
+          <div>
+            {user ? (
+              <div className="p-2 rounded-md surface-inset border border-white/[0.08] flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="h-6 w-6 rounded bg-[#202025] text-zinc-200 border border-white/[0.1] font-mono text-[11px] font-semibold flex items-center justify-center shrink-0">
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-medium text-zinc-200 truncate leading-tight">
+                      {user.name}
+                    </div>
+                    <div className="text-[10px] font-mono text-zinc-500 truncate leading-tight mt-0.5">
+                      {user.email}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={logout}
+                  title="Sign Out"
+                  className="p-1 text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06] rounded transition-colors cursor-pointer shrink-0"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/login"
+                className="btn-secondary w-full py-1.5 px-3 rounded-md text-[12px] font-medium flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <LogIn className="h-3.5 w-3.5 text-zinc-400" />
+                Sign In
+              </Link>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center justify-between text-[11px] font-mono text-zinc-400 px-1.5">
           <span className="flex items-center gap-2">
             <span

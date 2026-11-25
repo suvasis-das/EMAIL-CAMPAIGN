@@ -18,12 +18,76 @@ export const swaggerDocument = {
     },
   ],
   tags: [
+    { name: 'Auth', description: 'User registration and authentication (JWT)' },
     { name: 'Health', description: 'API and database health check' },
     { name: 'Leads', description: 'Upload and list campaign leads' },
     { name: 'Templates', description: 'Create, list, edit, and delete email templates' },
     { name: 'Campaigns', description: 'Start campaigns and check delivery stats' },
   ],
   paths: {
+    '/auth/register': {
+      post: {
+        tags: ['Auth'],
+        summary: 'Create a new user account',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['name', 'email', 'password'],
+                properties: {
+                  name: { type: 'string', example: 'Alex Morgan' },
+                  email: { type: 'string', example: 'alex@company.com' },
+                  password: { type: 'string', example: 'SecurePassword123' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'User account created and JWT returned' },
+          400: { description: 'Validation error' },
+          409: { description: 'Email address already in use' },
+        },
+      },
+    },
+    '/auth/login': {
+      post: {
+        tags: ['Auth'],
+        summary: 'Sign in with email and password to receive a JWT',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email', 'password'],
+                properties: {
+                  email: { type: 'string', example: 'demo@mailqueue.app' },
+                  password: { type: 'string', example: 'DemoPassword123!' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Authenticated successfully with JWT' },
+          401: { description: 'Invalid email or password' },
+        },
+      },
+    },
+    '/auth/me': {
+      get: {
+        tags: ['Auth'],
+        summary: 'Get the currently signed-in user profile',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: { description: 'Current user profile' },
+          401: { description: 'Not authenticated or expired session' },
+        },
+      },
+    },
     '/health': {
       get: {
         tags: ['Health'],

@@ -50,12 +50,13 @@ Instead of sending emails synchronously inside HTTP requests, the API writes que
 
 ## Key Features
 
+- **Operator Authentication & Access:** User registration and sign-in backed by bcrypt password hashing (10 salt rounds) and stateless 7-day JWT tokens (`POST /auth/register`, `POST /auth/login`, `GET /auth/me`), complete with a dedicated login/signup page and instant evaluation demo account.
 - **CSV Lead Ingestion with Duplicate Protection:** Upload leads via `POST /leads/upload` (`multer` + `csv-parse`). Validates email syntax and uses bulk `INSERT IGNORE` backed by a MySQL `UNIQUE` constraint on `leads.email`, returning exact `inserted`, `skippedDuplicates`, and `invalidRows` counts.
 - **Template Studio with Live Preview:** Full CRUD for reusable templates supporting `{{name}}`, `{{company}}`, and `{{email}}` placeholders, paired with a split-pane email client preview rendered on every keystroke.
 - **Transactional Campaign Queueing:** `POST /campaigns` creates the campaign record and bulk-inserts one `pending` row per lead into `email_logs` inside a single MySQL transaction (`beginTransaction` → `commit` / `rollback`), preventing partial or orphaned campaigns.
 - **Fault-Tolerant Background Worker:** Runs as an independent process (`node-cron` every minute), fetches up to 10 `pending` or retryable `failed` (`retry_count < 3`) rows, renders templates via a pure function, dispatches via Nodemailer, records SMTP errors, and automatically transitions campaign status (`pending` → `running` → `completed`).
 - **Auto-Refreshing Telemetry Dashboard:** Displays live `sent`, `pending`, and `failed` metrics, proportional delivery bar, and recipient-level logs (with retry count `0/3` and last SMTP error) polling every 5 seconds with pause/resume controls.
-- **Interactive API Documentation & Tests:** Complete OpenAPI 3.0 spec served at `/api-docs`, plus 11 automated Jest + Supertest tests covering template rendering edge cases and campaign API transactions/rollbacks.
+- **Interactive API Documentation & Tests:** Complete OpenAPI 3.0 spec served at `/api-docs`, plus 19 automated Jest + Supertest tests covering auth, template rendering edge cases, and campaign API transactions/rollbacks.
 
 ---
 
@@ -63,11 +64,11 @@ Instead of sending emails synchronously inside HTTP requests, the API writes que
 
 | Layer | Technology |
 | --- | --- |
-| **Frontend** | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4 |
-| **Backend API** | Node.js, TypeScript, Express, Multer, `csv-parse`, Swagger UI |
+| **Frontend** | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4, Lucide Icons |
+| **Backend API** | Node.js, TypeScript, Express, bcryptjs, jsonwebtoken, Multer, `csv-parse`, Swagger UI |
 | **Database** | MySQL 8 (`mysql2/promise` with plain parameterized SQL — no ORM) |
 | **Worker & Email** | `node-cron`, Nodemailer (Mailtrap SMTP in dev / any SMTP in prod) |
-| **Testing** | Jest, `ts-jest`, Supertest |
+| **Testing** | Jest, `ts-jest`, Supertest (19 automated tests) |
 | **Deployment** | Vercel (Frontend), Railway (MySQL + API + Worker), GitHub |
 
 ---
@@ -76,6 +77,7 @@ Instead of sending emails synchronously inside HTTP requests, the API writes que
 
 Defined in [`database/schema.sql`](./database/schema.sql) (and auto-verified on startup via [`backend/src/config/initDb.ts`](./backend/src/config/initDb.ts)):
 
+- **`users`** (`id`, `name`, `email UNIQUE`, `password_hash`, `created_at`)
 - **`leads`** (`id`, `name`, `email UNIQUE`, `company`, `created_at`)
 - **`templates`** (`id`, `name`, `subject`, `body`, `created_at`)
 - **`campaigns`** (`id`, `name`, `template_id FK -> templates(id) ON DELETE RESTRICT`, `status ENUM('pending','running','completed')`, `created_at`)
@@ -88,6 +90,9 @@ Defined in [`database/schema.sql`](./database/schema.sql) (and auto-verified on 
 
 | Method | Route | Description |
 | --- | --- | --- |
+| `POST` | `/auth/register` | Register a new user with name, email, and password |
+| `POST` | `/auth/login` | Sign in with email and password to receive a JWT |
+| `GET` | `/auth/me` | Fetch authenticated user profile via Bearer token |
 | `GET` | `/health` | Verifies API uptime and MySQL connectivity |
 | `GET` | `/api-docs` | Interactive Swagger / OpenAPI 3.0 documentation |
 | `POST` | `/leads/upload` | Multipart CSV upload (`file`); skips duplicate emails |

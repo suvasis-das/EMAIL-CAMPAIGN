@@ -12,6 +12,7 @@ const rawCorsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
  */
 export const env = {
   port: Number(process.env.PORT) || 4000,
+  jwtSecret: process.env.JWT_SECRET || 'mailqueue-super-secret-jwt-key-2026',
   // Supports comma-separated origins for production + local preview, or "*"
   corsOrigins:
     rawCorsOrigin === '*'

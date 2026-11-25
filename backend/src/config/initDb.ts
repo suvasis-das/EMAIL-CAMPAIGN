@@ -1,8 +1,9 @@
 import { RowDataPacket } from 'mysql2';
+import bcrypt from 'bcryptjs';
 import { pool } from './db';
 
 /**
- * Ensures all 4 application tables and indexes exist in MySQL.
+ * Ensures all application tables and indexes exist in MySQL.
  *
  * Mirrors database/schema.sql using idempotent DDL (`CREATE TABLE IF NOT EXISTS`)
  * so fresh cloud deployments (Railway, Render, Docker) bootstrap automatically
@@ -22,6 +23,34 @@ export async function ensureDatabaseSchema(): Promise<void> {
       );
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
+  }
+
+  // 0. Users table (for authentication)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      password_hash VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Seed demo account if no users exist yet
+  try {
+    const [userRows] = await pool.query<RowDataPacket[]>(
+      'SELECT id FROM users LIMIT 1'
+    );
+    if (userRows.length === 0) {
+      const demoHash = await bcrypt.hash('DemoPassword123!', 10);
+      await pool.query(
+        'INSERT IGNORE INTO users (name, email, password_hash) VALUES (?, ?, ?)',
+        ['Demo Operator', 'demo@mailqueue.app', demoHash]
+      );
+      console.log('[DB] Seeded default demo account (demo@mailqueue.app).');
+    }
+  } catch (seedErr) {
+    console.warn('[DB] Could not check or seed demo user:', seedErr);
   }
 
   await pool.query(`

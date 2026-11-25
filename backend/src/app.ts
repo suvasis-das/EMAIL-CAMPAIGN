@@ -4,6 +4,7 @@ import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env';
 import { pool } from './config/db';
 import { swaggerDocument } from './config/swagger';
+import authRoutes from './routes/auth.routes';
 import leadsRoutes from './routes/leads.routes';
 import templatesRoutes from './routes/templates.routes';
 import campaignsRoutes from './routes/campaigns.routes';
@@ -42,6 +43,7 @@ app.get('/health', async (_req, res) => {
 });
 
 // Feature routes
+app.use('/auth', authRoutes);
 app.use('/leads', leadsRoutes);
 app.use('/templates', templatesRoutes);
 app.use('/campaigns', campaignsRoutes);

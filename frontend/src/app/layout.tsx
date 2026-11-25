@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import { Sidebar } from '@/components/Sidebar';
+import { AuthProvider } from '@/lib/auth-context';
 import './globals.css';
 
 const inter = Inter({
@@ -26,14 +27,16 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="min-h-screen bg-[#09090b] text-zinc-100 antialiased">
-        <div className="min-h-screen flex flex-col md:flex-row">
-          <Sidebar />
-          <main className="flex-1 min-w-0">
-            <div className="max-w-6xl mx-auto px-5 sm:px-8 py-7">
-              {children}
-            </div>
-          </main>
-        </div>
+        <AuthProvider>
+          <div className="min-h-screen flex flex-col md:flex-row">
+            <Sidebar />
+            <main className="flex-1 min-w-0">
+              <div className="max-w-6xl mx-auto px-5 sm:px-8 py-7">
+                {children}
+              </div>
+            </main>
+          </div>
+        </AuthProvider>
       </body>
     </html>
   );

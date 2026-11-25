@@ -6,6 +6,36 @@
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  created_at?: string;
+}
+
+export interface AuthResponse {
+  message: string;
+  user: User;
+  token: string;
+}
+
+export const TOKEN_STORAGE_KEY = 'mailqueue_auth_token';
+
+export function getStoredToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function setStoredToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(TOKEN_STORAGE_KEY, token);
+}
+
+export function removeStoredToken(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
 export interface Lead {
   id: number;
   name: string;
@@ -73,8 +103,16 @@ export interface CampaignStatsResponse {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = getStoredToken();
+  const headers = new Headers(options?.headers);
+
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
+    headers,
     cache: 'no-store',
   });
 
@@ -94,6 +132,23 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   checkHealth: () =>
     request<{ status: string; database: string }>('/health'),
+
+  // Auth
+  register: (payload: { name: string; email: string; password: string }) =>
+    request<AuthResponse>('/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+
+  login: (payload: { email: string; password: string }) =>
+    request<AuthResponse>('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+
+  getMe: () => request<{ user: User }>('/auth/me'),
 
   // Leads
   getLeads: () => request<{ leads: Lead[] }>('/leads'),
