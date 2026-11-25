@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
-import { Sidebar } from '@/components/Sidebar';
 import { AuthProvider } from '@/lib/auth-context';
+import { AuthGuard } from '@/components/AuthGuard';
 import './globals.css';
 
 const inter = Inter({
@@ -15,8 +15,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Mailqueue — Email Campaign Console',
-  description: 'Lead management, template editor, campaign queue, and SMTP delivery monitor.',
+  title: 'Mailqueue — Bulk Email Campaign & Queue Platform',
+  description: 'Transactional email campaigns, lead management, template studio, and SMTP delivery worker.',
 };
 
 export default function RootLayout({
@@ -28,14 +28,7 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="min-h-screen bg-[#09090b] text-zinc-100 antialiased">
         <AuthProvider>
-          <div className="min-h-screen flex flex-col md:flex-row">
-            <Sidebar />
-            <main className="flex-1 min-w-0">
-              <div className="max-w-6xl mx-auto px-5 sm:px-8 py-7">
-                {children}
-              </div>
-            </main>
-          </div>
+          <AuthGuard>{children}</AuthGuard>
         </AuthProvider>
       </body>
     </html>

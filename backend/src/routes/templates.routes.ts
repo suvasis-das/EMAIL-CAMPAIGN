@@ -5,8 +5,12 @@ import {
   getTemplates,
   updateTemplate,
 } from '../controllers/templates.controller';
+import { requireAuth } from '../middleware/auth.middleware';
 
 const router = Router();
+
+// Enforce authentication for all template operations
+router.use(requireAuth);
 
 router.post('/', createTemplate);
 router.get('/', getTemplates);

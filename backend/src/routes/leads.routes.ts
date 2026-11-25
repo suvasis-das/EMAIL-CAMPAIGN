@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { getLeads, uploadLeads } from '../controllers/leads.controller';
+import { requireAuth } from '../middleware/auth.middleware';
 
 const router = Router();
+
+// Enforce authentication for all lead management operations
+router.use(requireAuth);
 
 // Store uploaded CSV in memory (no temp files to clean up on disk).
 // 5 MB is plenty for tens of thousands of leads.

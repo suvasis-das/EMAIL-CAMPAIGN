@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { app } from '../src/app';
 import { pool } from '../src/config/db';
+import { generateToken } from '../src/middleware/auth.middleware';
 
 // Mock the MySQL pool so API tests run fast and deterministically
 // without requiring a live MySQL database.
@@ -15,6 +16,12 @@ const mockedPool = pool as unknown as {
   query: jest.Mock;
   getConnection: jest.Mock;
 };
+
+const testToken = generateToken({
+  userId: 1,
+  email: 'operator@mailqueue.app',
+  name: 'Test Operator',
+});
 
 describe('Campaigns API', () => {
   let mockConnection: {
@@ -38,6 +45,15 @@ describe('Campaigns API', () => {
   });
 
   describe('POST /campaigns', () => {
+    it('returns 401 when no authorization header is provided', async () => {
+      const response = await request(app)
+        .post('/campaigns')
+        .send({ name: 'Unauthorized Run', template_id: 1 });
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toMatch(/authentication required/i);
+    });
+
     it('creates a campaign and queues one pending email_log per lead', async () => {
       // 1. Template lookup
       mockConnection.query
@@ -51,6 +67,7 @@ describe('Campaigns API', () => {
 
       const response = await request(app)
         .post('/campaigns')
+        .set('Authorization', `Bearer ${testToken}`)
         .send({ name: 'November Launch', template_id: 2 });
 
       expect(response.status).toBe(201);
@@ -84,6 +101,7 @@ describe('Campaigns API', () => {
     it('returns 400 when campaign name is missing', async () => {
       const response = await request(app)
         .post('/campaigns')
+        .set('Authorization', `Bearer ${testToken}`)
         .send({ name: '   ', template_id: 1 });
 
       expect(response.status).toBe(400);
@@ -96,6 +114,7 @@ describe('Campaigns API', () => {
 
       const response = await request(app)
         .post('/campaigns')
+        .set('Authorization', `Bearer ${testToken}`)
         .send({ name: 'Ghost Template Run', template_id: 999 });
 
       expect(response.status).toBe(404);
@@ -111,6 +130,7 @@ describe('Campaigns API', () => {
 
       const response = await request(app)
         .post('/campaigns')
+        .set('Authorization', `Bearer ${testToken}`)
         .send({ name: 'Empty Audience Run', template_id: 1 });
 
       expect(response.status).toBe(400);
@@ -121,6 +141,13 @@ describe('Campaigns API', () => {
   });
 
   describe('GET /campaigns/:id/stats', () => {
+    it('returns 401 when no authorization header is provided', async () => {
+      const response = await request(app).get('/campaigns/7/stats');
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toMatch(/authentication required/i);
+    });
+
     it('returns sent, failed, pending counts and recipient logs', async () => {
       mockedPool.query
         // 1. Campaign metadata
@@ -161,7 +188,9 @@ describe('Campaigns API', () => {
           ],
         ]);
 
-      const response = await request(app).get('/campaigns/7/stats');
+      const response = await request(app)
+        .get('/campaigns/7/stats')
+        .set('Authorization', `Bearer ${testToken}`);
 
       expect(response.status).toBe(200);
       expect(response.body.stats).toEqual({
@@ -176,7 +205,9 @@ describe('Campaigns API', () => {
     it('returns 404 when campaign does not exist', async () => {
       mockedPool.query.mockResolvedValueOnce([[]]);
 
-      const response = await request(app).get('/campaigns/404/stats');
+      const response = await request(app)
+        .get('/campaigns/404/stats')
+        .set('Authorization', `Bearer ${testToken}`);
 
       expect(response.status).toBe(404);
       expect(response.body.error).toMatch(/campaign not found/i);
