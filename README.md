@@ -11,6 +11,8 @@ Instead of sending emails synchronously inside HTTP requests, the API writes que
 
 ### Live Deployment
 - **Web App:** https://mailqueue-campaigner.vercel.app
+- **Login / Sign In Page:** https://mailqueue-campaigner.vercel.app/login
+- **Demo Operator Account:** `demo@mailqueue.app` / `DemoPassword123!` *(or click the 1-click "Quick Fill Demo Account" button)*
 - **REST API:** https://api-production-2c66ea97.up.railway.app
 - **Interactive OpenAPI / Swagger Docs:** https://api-production-2c66ea97.up.railway.app/api-docs
 - **API Health Check:** https://api-production-2c66ea97.up.railway.app/health
